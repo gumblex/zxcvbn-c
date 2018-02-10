@@ -1,10 +1,11 @@
-CFLAGS ?= -O2 -Wall -Wextra -Wdeclaration-after-statement
-CXXFLAGS ?= -O2 -Wall -Wextra
+CFLAGS ?= -O3 -march=native -flto -Wall -Wextra -Wdeclaration-after-statement
+CXXFLAGS ?= -O3 -march=native -flto -Wall -Wextra
 
 # default programs
 CC ?= gcc
 AR ?= ar
 CXX ?= g++
+AWK ?= awk
 
 # need zxcvbn.h prior to package installation
 CPPFLAGS += -I.
@@ -15,7 +16,25 @@ SONAME = libzxcvbn.so.0
 
 WORDS = words-eng_wiki.txt words-female.txt words-male.txt words-passwd.txt words-surname.txt words-tv_film.txt
 
-all: test-file test-inline test-c++inline test-c++file test-shlib test-statlib test-internals
+PROFILE_DIR := $(CURDIR)
+
+ifeq ("$(PROFILE)","GEN")
+	CFLAGS += -fprofile-generate=$(PROFILE_DIR) -DNO_NORETURN=1
+	EXTLIBS += -lgcov
+	export CCACHE_DISABLE = t
+else
+ifneq ("$(PROFILE)","")
+	CFLAGS += -fprofile-use=$(PROFILE_DIR) -fprofile-correction -DNO_NORETURN=1
+	export CCACHE_DISABLE = t
+endif
+endif
+
+all: test-file test-inline test-c++inline test-c++file test-shlib test-statlib test-internals zxcvbn
+
+profile:
+	$(MAKE) PROFILE=GEN all
+	$(MAKE) PROFILE=GEN -j1 test
+	$(MAKE) PROFILE=USE -B zxcvbn-inline.o zxcvbn
 
 test-shlib: test.c $(TARGET_LIB)
 	if [ ! -e libzxcvbn.so ]; then ln -s $(TARGET_LIB) libzxcvbn.so; fi
@@ -44,7 +63,11 @@ test-inline: test.c zxcvbn-inline.o
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
 		-o test-inline test.c zxcvbn-inline.o $(LDFLAGS) -lm
 
-test-internals: test-internals.c zxcvbn.c dict-crc.h zxcvbn.h
+zxcvbn: cmdline.c zxcvbn-inline.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) \
+		-o zxcvbn cmdline.c zxcvbn-inline.o $(LDFLAGS) -lm
+
+test-internals: test-internals.c zxcvbn.c dict-crc.h dict-src.h zxcvbn.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
 		-o test-internals test-internals.c $(LDFLAGS) -lm
 
@@ -99,6 +122,8 @@ test: test-internals test-file test-inline test-c++inline test-c++file test-shli
 	./test-c++file -t testcases.txt
 	@echo Testing C++ build, dictionary in executable
 	./test-c++inline -t testcases.txt
+	@echo Testing standalone command line
+	$(AWK) '{print $1}' testcases.txt | ./zxcvbn > /dev/null
 	@echo Finished
 
 clean:
@@ -107,3 +132,4 @@ clean:
 	rm -f dict-*.h zxcvbn.dict zxcvbn.cpp test.cpp
 	rm -f dictgen
 	rm -f ${TARGET_LIB} ${SONAME} libzxcvbn.so test-shlib libzxcvbn.a test-statlib
+	rm -f zxcvbn
