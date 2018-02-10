@@ -123,7 +123,7 @@ test: test-internals test-file test-inline test-c++inline test-c++file test-shli
 	@echo Testing C++ build, dictionary in executable
 	./test-c++inline -t testcases.txt
 	@echo Testing standalone command line
-	$(AWK) '{print $1}' testcases.txt | ./zxcvbn > /dev/null
+	$(AWK) '{print $$1}' testcases.txt | ./zxcvbn > /dev/null
 	@echo Finished
 
 clean:
